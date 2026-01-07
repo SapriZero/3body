@@ -1,4 +1,5 @@
-// app.js — 3D visualization with Three.js + advanced features
+// app.js — Three-Body 3D Simulator (CORRECTED & COMPLETE)
+document.addEventListener('DOMContentLoaded', () => {
 
 let scene, camera, renderer, controls;
 let bodies = [];
@@ -12,7 +13,7 @@ const trailMaterials = [
 
 // Gravitational field visualization
 let fieldLines = [];
-const FIELD_RESOLUTION = 5; // 5x5x5 grid
+const FIELD_RESOLUTION = 5;
 const FIELD_SCALE = 0.2;
 
 // Simulation state
@@ -26,7 +27,7 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 
-// UI elements
+// UI elements (now safe — DOM is loaded)
 const dtSlider = document.getElementById('dtSlider');
 const dtValue = document.getElementById('dtValue');
 const timeValue = document.getElementById('timeValue');
@@ -60,14 +61,12 @@ function initThreeJS() {
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
-    // Lights
     const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
     scene.add(ambientLight);
     const pointLight = new THREE.PointLight(0xffffff, 1);
     pointLight.position.set(5, 5, 5);
     scene.add(pointLight);
 
-    // Create body meshes
     const geometry = new THREE.SphereGeometry(0.05, 16, 16);
     const materials = [
         new THREE.MeshPhongMaterial({ color: 0x63b3ed }),
@@ -92,11 +91,10 @@ function onWindowResize() {
 
 // Create gravitational field visualization
 function createGravitationalField() {
-    // Remove old field
     fieldLines.forEach(line => scene.remove(line));
     fieldLines = [];
 
-    if (!showFieldCheckbox.checked) return;
+    if (!showFieldCheckbox || !showFieldCheckbox.checked) return;
 
     const size = 2.0;
     const step = (2 * size) / (FIELD_RESOLUTION - 1);
@@ -110,7 +108,6 @@ function createGravitationalField() {
                 const z = -half + k * step;
                 const testPoint = [x, y, z];
 
-                // Compute gravitational acceleration at this point
                 let ax = 0, ay = 0, az = 0;
                 const G = 1.0, eps = 1e-3;
                 for (const body of state) {
@@ -126,17 +123,14 @@ function createGravitationalField() {
                     az += factor * dz;
                 }
 
-                // Skip if too weak
                 const accMag = Math.sqrt(ax*ax + ay*ay + az*az);
                 if (accMag < 0.1) continue;
 
-                // Normalize and scale
                 const scale = Math.min(accMag, 1.0) * FIELD_SCALE;
                 const dirX = ax / accMag * scale;
                 const dirY = ay / accMag * scale;
                 const dirZ = az / accMag * scale;
 
-                // Create arrow
                 const origin = new THREE.Vector3(x, y, z);
                 const direction = new THREE.Vector3(dirX, dirY, dirZ);
                 const arrow = new THREE.ArrowHelper(
@@ -154,12 +148,16 @@ function createGravitationalField() {
     }
 }
 
-// Initialize physics
+// Initialize physics using window.InitialConfigurations
 function initSimulation(configKey = currentConfig) {
     currentConfig = configKey;
-    const config = InitialConfigurations[configKey];
+    const config = window.InitialConfigurations[configKey];
+    if (!config) {
+        console.error("Configurazione sconosciuta:", configKey);
+        return;
+    }
     state = config.fn();
-    E0 = totalEnergy(state);
+    E0 = window.totalEnergy(state);
     simulatedTime = 0;
     trajectories.forEach(t => t.length = 0);
     updateUI();
@@ -168,12 +166,10 @@ function initSimulation(configKey = currentConfig) {
 
 // Update Three.js objects
 function updateVisualization() {
-    // Update body positions
     state.forEach((body, i) => {
         bodies[i].position.set(body.r[0], body.r[1], body.r[2]);
     });
 
-    // Update trails
     state.forEach((body, i) => {
         trajectories[i].push([...body.r]);
         if (trajectories[i].length > MAX_TRAIL) {
@@ -192,7 +188,6 @@ function updateVisualization() {
         }
     });
 
-    // Update field (every 10 steps for performance)
     if (Math.floor(simulatedTime / dt) % 10 === 0) {
         createGravitationalField();
     }
@@ -200,14 +195,14 @@ function updateVisualization() {
 
 function step() {
     if (!isRunning) return;
-    state = leapfrogStep(state, dt);
+    state = window.leapfrogStep(state, dt);
     simulatedTime += dt;
     updateVisualization();
     updateEnergyUI();
 }
 
 function updateEnergyUI() {
-    const E1 = totalEnergy(state);
+    const E1 = window.totalEnergy(state);
     const relError = Math.abs(E1 - E0) / (Math.abs(E0) + 1e-15);
     
     E1Value.textContent = E1.toFixed(6);
@@ -320,9 +315,11 @@ configSelect.addEventListener('change', (e) => {
     updateVisualization();
 });
 
-showFieldCheckbox.addEventListener('change', () => {
-    createGravitationalField();
-});
+if (showFieldCheckbox) {
+    showFieldCheckbox.addEventListener('change', () => {
+        createGravitationalField();
+    });
+}
 
 dtSlider.addEventListener('input', () => {
     dt = parseFloat(dtSlider.value);
@@ -334,6 +331,16 @@ initThreeJS();
 initSimulation();
 updateVisualization();
 dtValue.textContent = dt.toFixed(4);
-
-// Start paused
 statusText.textContent = 'Paused';
+
+// Animation loop
+function animate() {
+    step();
+    controls.update();
+    renderer.render(scene, camera);
+    if (isRunning) {
+        animationId = requestAnimationFrame(animate);
+    }
+}
+
+}); // <-- fine di DOMContentLoaded
