@@ -144,8 +144,10 @@ const InitialConfigurations = {
 
 // Esporta
 if (typeof window !== 'undefined') {
-    // ... esportazioni precedenti ...
     window.InitialConfigurations = InitialConfigurations;
+    window.totalEnergy = totalEnergy;
+    window.leapfrogStep = leapfrogStep;
+    // ... altre esportazioni ...
 }
 
 // Export for modules (or window in browser)
