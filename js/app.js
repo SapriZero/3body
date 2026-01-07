@@ -1,17 +1,13 @@
-// app.js — Three-Body 3D Simulator (CORRECTED & COMPLETE)
+// app.js — Three-Body (N-Body) 3D Simulator with N support (2–20)
 document.addEventListener('DOMContentLoaded', () => {
 
 let scene, camera, renderer, controls;
-let bodies = [];
-let trajectories = [[], [], []];
-const MAX_TRAIL = 1000;
-const trailMaterials = [
-    new THREE.LineBasicMaterial({ color: 0x63b3ed }),
-    new THREE.LineBasicMaterial({ color: 0xf6ad55 }),
-    new THREE.LineBasicMaterial({ color: 0xfc8181 })
-];
+let bodies = []; // Three.js meshes (dinamico)
+let trajectories = []; // dinamico
+const MAX_TRAIL = 500;
+let trailMaterials = []; // dinamico
 
-// Gravitational field visualization
+// Gravitational field
 let fieldLines = [];
 const FIELD_RESOLUTION = 5;
 const FIELD_SCALE = 0.2;
@@ -21,13 +17,14 @@ let state, E0, simulatedTime = 0, dt = 0.001;
 let isRunning = false;
 let animationId = null;
 let currentConfig = 'lagrange';
+let currentN = 3;
 
 // Recording
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 
-// UI elements (now safe — DOM is loaded)
+// UI elements
 const dtSlider = document.getElementById('dtSlider');
 const dtValue = document.getElementById('dtValue');
 const timeValue = document.getElementById('timeValue');
@@ -41,8 +38,21 @@ const resetBtn = document.getElementById('resetBtn');
 const recordBtn = document.getElementById('recordBtn');
 const configSelect = document.getElementById('configSelect');
 const showFieldCheckbox = document.getElementById('showField');
+const nBodiesSlider = document.getElementById('nBodiesSlider');
+const nBodiesValue = document.getElementById('nBodiesValue');
 
-// Initialize Three.js
+// Utility: genera colori distinti
+function generateColors(n) {
+    const colors = [];
+    for (let i = 0; i < n; i++) {
+        const hue = (i * 137.507) % 360; // angolo aureo
+        const color = new THREE.Color(`hsl(${hue}, 80%, 65%)`);
+        colors.push(color);
+    }
+    return colors;
+}
+
+// Inizializza Three.js
 function initThreeJS() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0a14);
@@ -67,18 +77,6 @@ function initThreeJS() {
     pointLight.position.set(5, 5, 5);
     scene.add(pointLight);
 
-    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-    const materials = [
-        new THREE.MeshPhongMaterial({ color: 0x63b3ed }),
-        new THREE.MeshPhongMaterial({ color: 0xf6ad55 }),
-        new THREE.MeshPhongMaterial({ color: 0xfc8181 })
-    ];
-    bodies = materials.map(mat => {
-        const mesh = new THREE.Mesh(geometry, mat);
-        scene.add(mesh);
-        return mesh;
-    });
-
     window.addEventListener('resize', onWindowResize);
 }
 
@@ -89,12 +87,59 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Create gravitational field visualization
+// Ricrea la scena per N corpi
+function setupSceneForN(n) {
+    // Rimuovi vecchi oggetti
+    bodies.forEach(mesh => scene.remove(mesh));
+    for (let i = 0; i < 100; i++) {
+        const trail = scene.getObjectByName(`trail-${i}`);
+        if (trail) scene.remove(trail);
+    }
+
+    // Reset
+    bodies = [];
+    trajectories = Array(n).fill().map(() => []);
+    trailMaterials = [];
+
+    // Crea nuovi
+    const colors = generateColors(n);
+    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+    
+    for (let i = 0; i < n; i++) {
+        const material = new THREE.MeshPhongMaterial({ color: colors[i] });
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        bodies.push(mesh);
+        trailMaterials.push(new THREE.LineBasicMaterial({ color: colors[i] }));
+    }
+}
+
+// Crea stato casuale stabile per N corpi
+function createRandomStableState(N) {
+    const bodies = [];
+    for (let i = 0; i < N; i++) {
+        const angle = (i / N) * Math.PI * 2 + Math.random() * 0.5;
+        const radius = 1.0 + Math.random() * 2.0;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const z = (Math.random() - 0.5) * 0.1;
+
+        const speed = 0.8 / Math.sqrt(radius);
+        const vx = -Math.sin(angle) * speed + (Math.random() - 0.5) * 0.1;
+        const vy = Math.cos(angle) * speed + (Math.random() - 0.5) * 0.1;
+        const vz = (Math.random() - 0.5) * 0.05;
+
+        bodies.push(new Body(1.0, [x, y, z], [vx, vy, vz]));
+    }
+    return bodies;
+}
+
+// Campo gravitazionale (disattivato per N > 5)
 function createGravitationalField() {
     fieldLines.forEach(line => scene.remove(line));
     fieldLines = [];
 
-    if (!showFieldCheckbox || !showFieldCheckbox.checked) return;
+    if (!showFieldCheckbox || !showFieldCheckbox.checked || state.length > 5) return;
 
     const size = 2.0;
     const step = (2 * size) / (FIELD_RESOLUTION - 1);
@@ -106,7 +151,6 @@ function createGravitationalField() {
                 const x = -half + i * step;
                 const y = -half + j * step;
                 const z = -half + k * step;
-                const testPoint = [x, y, z];
 
                 let ax = 0, ay = 0, az = 0;
                 const G = 1.0, eps = 1e-3;
@@ -148,15 +192,21 @@ function createGravitationalField() {
     }
 }
 
-// Initialize physics using window.InitialConfigurations
-function initSimulation(configKey = currentConfig) {
+// Inizializza simulazione
+function initSimulation(configKey = currentConfig, N = currentN) {
     currentConfig = configKey;
-    const config = window.InitialConfigurations[configKey];
-    if (!config) {
-        console.error("Configurazione sconosciuta:", configKey);
-        return;
+    currentN = N;
+
+    setupSceneForN(N);
+
+    if (N === 3 && configKey === 'lagrange') {
+        state = window.InitialConfigurations.lagrange.fn();
+    } else if (N === 3 && configKey === 'figure8') {
+        state = window.InitialConfigurations.figure8.fn();
+    } else {
+        state = createRandomStableState(N);
     }
-    state = config.fn();
+
     E0 = window.totalEnergy(state);
     simulatedTime = 0;
     trajectories.forEach(t => t.length = 0);
@@ -164,14 +214,14 @@ function initSimulation(configKey = currentConfig) {
     createGravitationalField();
 }
 
-// Update Three.js objects
+// Aggiorna visualizzazione
 function updateVisualization() {
-    state.forEach((body, i) => {
-        bodies[i].position.set(body.r[0], body.r[1], body.r[2]);
-    });
+    for (let i = 0; i < state.length; i++) {
+        bodies[i].position.set(state[i].r[0], state[i].r[1], state[i].r[2]);
+    }
 
-    state.forEach((body, i) => {
-        trajectories[i].push([...body.r]);
+    for (let i = 0; i < state.length; i++) {
+        trajectories[i].push([...state[i].r]);
         if (trajectories[i].length > MAX_TRAIL) {
             trajectories[i].shift();
         }
@@ -186,13 +236,14 @@ function updateVisualization() {
             line.name = `trail-${i}`;
             scene.add(line);
         }
-    });
+    }
 
     if (Math.floor(simulatedTime / dt) % 10 === 0) {
         createGravitationalField();
     }
 }
 
+// Passo di simulazione
 function step() {
     if (!isRunning) return;
     state = window.leapfrogStep(state, dt);
@@ -201,6 +252,7 @@ function step() {
     updateEnergyUI();
 }
 
+// Aggiorna energia
 function updateEnergyUI() {
     const E1 = window.totalEnergy(state);
     const relError = Math.abs(E1 - E0) / (Math.abs(E0) + 1e-15);
@@ -215,6 +267,7 @@ function updateEnergyUI() {
     timeValue.textContent = simulatedTime.toFixed(3);
 }
 
+// Aggiorna UI
 function updateUI() {
     E0Value.textContent = E0.toFixed(6);
     timeValue.textContent = "0.000";
@@ -223,7 +276,7 @@ function updateUI() {
     relErrorValue.className = 'energy-good';
 }
 
-// Recording functions
+// Registrazione video
 function startRecording() {
     if (isRecording) return;
     recordedChunks = [];
@@ -243,7 +296,7 @@ function startRecording() {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `three-body-${currentConfig}-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`;
+        a.download = `n-body-${currentN}-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
@@ -265,7 +318,7 @@ function stopRecording() {
     }
 }
 
-// Event handlers
+// Event listeners
 playBtn.addEventListener('click', () => {
     isRunning = true;
     statusText.textContent = 'Running';
@@ -311,7 +364,9 @@ configSelect.addEventListener('change', (e) => {
         alert("Pause the simulation before changing configuration.");
         return;
     }
-    initSimulation(e.target.value);
+    // Per N ≠ 3, usa sempre caotico
+    const newConfig = (currentN === 3) ? e.target.value : 'chaotic';
+    initSimulation(newConfig, currentN);
     updateVisualization();
 });
 
@@ -326,14 +381,33 @@ dtSlider.addEventListener('input', () => {
     dtValue.textContent = dt.toFixed(4);
 });
 
-// Initialize
+// Nuovo: gestione slider N
+if (nBodiesSlider) {
+    nBodiesSlider.addEventListener('input', () => {
+        const N = parseInt(nBodiesSlider.value);
+        nBodiesValue.textContent = N;
+        if (!isRunning) {
+            // Per N ≠ 3, passa automaticamente a "chaotic"
+            const newConfig = (N === 3) ? currentConfig : 'chaotic';
+            initSimulation(newConfig, N);
+            updateVisualization();
+            // Disabilita opzioni configurazione se N ≠ 3
+            if (configSelect) {
+                configSelect.disabled = (N !== 3);
+            }
+        }
+    });
+}
+
+// Inizializza
 initThreeJS();
 initSimulation();
 updateVisualization();
 dtValue.textContent = dt.toFixed(4);
+if (nBodiesValue) nBodiesValue.textContent = currentN.toString();
 statusText.textContent = 'Paused';
 
-// Animation loop
+// Loop animazione
 function animate() {
     step();
     controls.update();
@@ -343,4 +417,4 @@ function animate() {
     }
 }
 
-}); // <-- fine di DOMContentLoaded
+}); // fine DOMContentLoaded
