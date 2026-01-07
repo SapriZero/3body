@@ -110,8 +110,6 @@ Il codice è **open, riproducibile e pronto per l’estensione**.
 
 ## ▶️ Demo live
 
-*(Durante una presentazione, qui si esegue lo script e si mostra il test di conservazione dell’energia e l’evoluzione delle traiettorie.)*
-
 ---
 
 **Grazie per l’attenzione**  
