@@ -160,6 +160,7 @@ Il codice è **open, riproducibile e pronto per l’estensione**.
 ---
 
 ## ▶️ Demo live
+https://vitejsvite4msn1xzn-vs4j--5173--365214aa.local-corp.webcontainer.io/
 
 ---
 
