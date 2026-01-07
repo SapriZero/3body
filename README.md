@@ -159,6 +159,7 @@ The code is **open, reproducible, and ready for extension**.
 
 ## ▶️ Live Demo
 
+https://vitejsvite4msn1xzn-vs4j--5173--365214aa.local-corp.webcontainer.io/
 ---
 
 **Thank you for your attention**  
