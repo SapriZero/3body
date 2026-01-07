@@ -1,7 +1,7 @@
-// app.js — 3D visualization with Three.js
+// app.js — 3D visualization with Three.js + advanced features
 
 let scene, camera, renderer, controls;
-let bodies = []; // Three.js meshes
+let bodies = [];
 let trajectories = [[], [], []];
 const MAX_TRAIL = 1000;
 const trailMaterials = [
@@ -10,10 +10,21 @@ const trailMaterials = [
     new THREE.LineBasicMaterial({ color: 0xfc8181 })
 ];
 
+// Gravitational field visualization
+let fieldLines = [];
+const FIELD_RESOLUTION = 5; // 5x5x5 grid
+const FIELD_SCALE = 0.2;
+
 // Simulation state
 let state, E0, simulatedTime = 0, dt = 0.001;
 let isRunning = false;
 let animationId = null;
+let currentConfig = 'lagrange';
+
+// Recording
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
 
 // UI elements
 const dtSlider = document.getElementById('dtSlider');
@@ -26,6 +37,9 @@ const statusText = document.getElementById('statusText');
 const playBtn = document.getElementById('playBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
+const recordBtn = document.getElementById('recordBtn');
+const configSelect = document.getElementById('configSelect');
+const showFieldCheckbox = document.getElementById('showField');
 
 // Initialize Three.js
 function initThreeJS() {
@@ -36,7 +50,7 @@ function initThreeJS() {
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 0, 5);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(document.getElementById('canvas-container').clientWidth, 
                       document.getElementById('canvas-container').clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -76,13 +90,80 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
+// Create gravitational field visualization
+function createGravitationalField() {
+    // Remove old field
+    fieldLines.forEach(line => scene.remove(line));
+    fieldLines = [];
+
+    if (!showFieldCheckbox.checked) return;
+
+    const size = 2.0;
+    const step = (2 * size) / (FIELD_RESOLUTION - 1);
+    const half = size;
+
+    for (let i = 0; i < FIELD_RESOLUTION; i++) {
+        for (let j = 0; j < FIELD_RESOLUTION; j++) {
+            for (let k = 0; k < FIELD_RESOLUTION; k++) {
+                const x = -half + i * step;
+                const y = -half + j * step;
+                const z = -half + k * step;
+                const testPoint = [x, y, z];
+
+                // Compute gravitational acceleration at this point
+                let ax = 0, ay = 0, az = 0;
+                const G = 1.0, eps = 1e-3;
+                for (const body of state) {
+                    const dx = body.r[0] - x;
+                    const dy = body.r[1] - y;
+                    const dz = body.r[2] - z;
+                    const distSq = dx*dx + dy*dy + dz*dz;
+                    const dist = Math.sqrt(distSq) + eps;
+                    const distCubed = dist * distSq;
+                    const factor = G * body.m / distCubed;
+                    ax += factor * dx;
+                    ay += factor * dy;
+                    az += factor * dz;
+                }
+
+                // Skip if too weak
+                const accMag = Math.sqrt(ax*ax + ay*ay + az*az);
+                if (accMag < 0.1) continue;
+
+                // Normalize and scale
+                const scale = Math.min(accMag, 1.0) * FIELD_SCALE;
+                const dirX = ax / accMag * scale;
+                const dirY = ay / accMag * scale;
+                const dirZ = az / accMag * scale;
+
+                // Create arrow
+                const origin = new THREE.Vector3(x, y, z);
+                const direction = new THREE.Vector3(dirX, dirY, dirZ);
+                const arrow = new THREE.ArrowHelper(
+                    direction.clone().normalize(),
+                    origin,
+                    direction.length(),
+                    0x5555ff,
+                    0.1,
+                    0.05
+                );
+                scene.add(arrow);
+                fieldLines.push(arrow);
+            }
+        }
+    }
+}
+
 // Initialize physics
-function initSimulation() {
-    state = createLagrangianState();
+function initSimulation(configKey = currentConfig) {
+    currentConfig = configKey;
+    const config = InitialConfigurations[configKey];
+    state = config.fn();
     E0 = totalEnergy(state);
     simulatedTime = 0;
     trajectories.forEach(t => t.length = 0);
     updateUI();
+    createGravitationalField();
 }
 
 // Update Three.js objects
@@ -99,7 +180,6 @@ function updateVisualization() {
             trajectories[i].shift();
         }
 
-        // Remove old trail line if exists
         const existing = scene.getObjectByName(`trail-${i}`);
         if (existing) scene.remove(existing);
 
@@ -108,10 +188,14 @@ function updateVisualization() {
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
             const line = new THREE.Line(geometry, trailMaterials[i]);
             line.name = `trail-${i}`;
-            line.renderOrder = 1;
             scene.add(line);
         }
     });
+
+    // Update field (every 10 steps for performance)
+    if (Math.floor(simulatedTime / dt) % 10 === 0) {
+        createGravitationalField();
+    }
 }
 
 function step() {
@@ -144,12 +228,45 @@ function updateUI() {
     relErrorValue.className = 'energy-good';
 }
 
-function animate() {
-    step();
-    controls.update();
-    renderer.render(scene, camera);
-    if (isRunning) {
-        animationId = requestAnimationFrame(animate);
+// Recording functions
+function startRecording() {
+    if (isRecording) return;
+    recordedChunks = [];
+    
+    const stream = renderer.domElement.captureStream(30);
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    
+    mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+    
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `three-body-${currentConfig}-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+        isRecording = false;
+        recordBtn.textContent = '⏺️ Record Video';
+    };
+    
+    mediaRecorder.start();
+    isRecording = true;
+    recordBtn.textContent = '⏹️ Stop Recording';
+}
+
+function stopRecording() {
+    if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
     }
 }
 
@@ -180,6 +297,31 @@ resetBtn.addEventListener('click', () => {
     statusText.textContent = 'Reset';
     initSimulation();
     updateVisualization();
+});
+
+recordBtn.addEventListener('click', () => {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        if (!isRunning) {
+            alert("Please start the simulation first.");
+            return;
+        }
+        startRecording();
+    }
+});
+
+configSelect.addEventListener('change', (e) => {
+    if (isRunning) {
+        alert("Pause the simulation before changing configuration.");
+        return;
+    }
+    initSimulation(e.target.value);
+    updateVisualization();
+});
+
+showFieldCheckbox.addEventListener('change', () => {
+    createGravitationalField();
 });
 
 dtSlider.addEventListener('input', () => {
