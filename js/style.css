@@ -39,15 +39,22 @@ h2 {
     margin: 8px 0;
     font-family: monospace;
     font-size: 0.95em;
+    align-items: center;
 }
 
 label {
     color: #a0aec0;
+    display: block;
+    margin-bottom: 4px;
 }
 
 input[type="range"] {
     width: 100%;
     margin: 8px 0;
+}
+
+input[type="checkbox"] {
+    transform: scale(1.2);
 }
 
 .buttons {
@@ -76,6 +83,16 @@ button:hover {
 button:disabled {
     background: #666;
     cursor: not-allowed;
+}
+
+select {
+    width: 100%;
+    padding: 6px;
+    background: #2d3748;
+    color: #e0e0ff;
+    border: 1px solid #4a5568;
+    border-radius: 4px;
+    margin-top: 4px;
 }
 
 .status {
