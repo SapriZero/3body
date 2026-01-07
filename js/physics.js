@@ -1,15 +1,14 @@
-// physics.js — Pure physics engine (no DOM, no graphics)
+// physics.js — Pure physics engine for N-body simulation (3-body optimized)
 
 function vec3(x = 0, y = 0, z = 0) {
     return [x, y, z];
 }
 
-// Vector utilities (immutable)
 const Vec3 = {
-    add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
-    sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
-    scale: (v, s) => [v[0]*s, v[1]*s, v[2]*s],
-    dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+    add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+    sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+    scale: (v, s) => [v[0] * s, v[1] * s, v[2] * s],
+    dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
     norm: (v) => Math.sqrt(Vec3.dot(v, v)),
     copy: (v) => [v[0], v[1], v[2]]
 };
@@ -22,10 +21,17 @@ class Body {
     }
 }
 
-// State = Body[]
-function masses(state) { return state.map(b => b.m); }
-function positions(state) { return state.map(b => Vec3.copy(b.r)); }
-function velocities(state) { return state.map(b => Vec3.copy(b.v)); }
+function masses(state) {
+    return state.map(b => b.m);
+}
+
+function positions(state) {
+    return state.map(b => Vec3.copy(b.r));
+}
+
+function velocities(state) {
+    return state.map(b => Vec3.copy(b.v));
+}
 
 function accelerations(state, G = 1.0, eps = 1e-12) {
     const pos = positions(state);
@@ -70,7 +76,6 @@ function totalEnergy(state) {
     return kineticEnergy(state) + potentialEnergy(state);
 }
 
-// Pure relations
 function addVelocity(state, dv) {
     return state.map((b, i) => new Body(b.m, b.r, Vec3.add(b.v, dv[i])));
 }
@@ -101,10 +106,24 @@ const leapfrogStep = compose(
     halfStepVelocityRelation
 );
 
-// Aggiungi queste nuove funzioni in physics.js, alla fine
+// --- CONFIGURAZIONI INIZIALI (dopo tutte le funzioni!) ---
+
+function createLagrangianState() {
+    const a = 1.0;
+    const r1 = [ a,  0.0, 0.0];
+    const r2 = [-a/2,  Math.sqrt(3)*a/2, 0.0];
+    const r3 = [-a/2, -Math.sqrt(3)*a/2, 0.0];
+    const v1 = [ 0.0,  1.0, 0.0];
+    const v2 = [-Math.sqrt(3)/2, -0.5, 0.0];
+    const v3 = [ Math.sqrt(3)/2, -0.5, 0.0];
+    return [
+        new Body(1.0, r1, v1),
+        new Body(1.0, r2, v2),
+        new Body(1.0, r3, v3)
+    ];
+}
 
 function createFigure8State() {
-    // Chenciner & Montgomery's figure-8 (m=1, G=1)
     const r1 = [0.97000436, -0.24308753, 0];
     const r2 = [-0.97000436, 0.24308753, 0];
     const r3 = [0, 0, 0];
@@ -136,26 +155,19 @@ function createRandomChaoticState() {
     return bodies;
 }
 
+// --- RACCOLTA DELLE CONFIGURAZIONI ---
 const InitialConfigurations = {
     lagrange: { name: "Lagrangian Equilateral", fn: createLagrangianState },
     figure8: { name: "Figure-8 Orbit", fn: createFigure8State },
     chaotic: { name: "Random Chaotic", fn: createRandomChaoticState }
 };
 
-// Esporta
-if (typeof window !== 'undefined') {
-    window.InitialConfigurations = InitialConfigurations;
-    window.totalEnergy = totalEnergy;
-    window.leapfrogStep = leapfrogStep;
-    // ... altre esportazioni ...
-}
-
-// Export for modules (or window in browser)
+// --- Esporta su window per l'uso nel browser ---
 if (typeof window !== 'undefined') {
     window.Vec3 = Vec3;
     window.Body = Body;
     window.accelerations = accelerations;
     window.totalEnergy = totalEnergy;
     window.leapfrogStep = leapfrogStep;
-    window.createLagrangianState = createLagrangianState;
+    window.InitialConfigurations = InitialConfigurations;
 }
