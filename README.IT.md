@@ -115,4 +115,4 @@ Il codice è **open, riproducibile e pronto per l’estensione**.
 ---
 
 **Grazie per l’attenzione**  
-*Il codice sorgente è disponibile su richiesta.*
+*Ettore bevilacqua  sapriqbit@gmail.com*
