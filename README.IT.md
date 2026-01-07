@@ -145,8 +145,6 @@ Il framework non solo è elegante dal punto di vista del design software, ma è 
 
 ## 🚀 Conclusioni
 
-Non abbiamo inventato nuove leggi della fisica — ma abbiamo **reinventato il modo di esprimerle nel codice**.  
-
 Il nostro approccio dimostra che:  
 > **Una simulazione numerica può essere al tempo stesso rigorosa, leggibile, modulare e performante**,  
 > se costruita attorno a **relazioni pure e composizione dichiarativa**.
