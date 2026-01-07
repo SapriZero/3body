@@ -1,4 +1,4 @@
-// app.js — Three-Body (N-Body) 3D Simulator with N support (2–20)
+// app.js — Final N-Body 3D Simulator with Full Features
 document.addEventListener('DOMContentLoaded', () => {
 
 let scene, camera, renderer, controls;
@@ -41,11 +41,31 @@ const showFieldCheckbox = document.getElementById('showField');
 const nBodiesSlider = document.getElementById('nBodiesSlider');
 const nBodiesValue = document.getElementById('nBodiesValue');
 
-// Utility: genera colori distinti
+// Editor corpo
+let selectedBodyIndex = 0;
+const bodySelect = document.getElementById('bodySelect');
+const massSlider = document.getElementById('massSlider');
+const massValue = document.getElementById('massValue');
+const posX = document.getElementById('posX');
+const posY = document.getElementById('posY');
+const posZ = document.getElementById('posZ');
+const velX = document.getElementById('velX');
+const velY = document.getElementById('velY');
+const velZ = document.getElementById('velZ');
+const applyBtn = document.getElementById('applyBtn');
+const randomizeBtn = document.getElementById('randomizeBtn');
+
+// Utility: raggio in base alla massa (r ∝ m^(1/3))
+function getBodyRadius(mass) {
+    const radius = 0.03 + 0.08 * Math.pow(mass, 1/3);
+    return Math.max(0.03, radius); // minimo visibile
+}
+
+// Utility: colori distinti
 function generateColors(n) {
     const colors = [];
     for (let i = 0; i < n; i++) {
-        const hue = (i * 137.507) % 360; // angolo aureo
+        const hue = (i * 137.507) % 360;
         const color = new THREE.Color(`hsl(${hue}, 80%, 65%)`);
         colors.push(color);
     }
@@ -87,10 +107,13 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Ricrea la scena per N corpi
+// Ricrea la scena per N corpi (con dimensioni proporzionali alla massa)
 function setupSceneForN(n) {
     // Rimuovi vecchi oggetti
-    bodies.forEach(mesh => scene.remove(mesh));
+    bodies.forEach(mesh => {
+        mesh.geometry.dispose();
+        scene.remove(mesh);
+    });
     for (let i = 0; i < 100; i++) {
         const trail = scene.getObjectByName(`trail-${i}`);
         if (trail) scene.remove(trail);
@@ -101,20 +124,35 @@ function setupSceneForN(n) {
     trajectories = Array(n).fill().map(() => []);
     trailMaterials = [];
 
-    // Crea nuovi
+    // Crea nuovi corpi con dimensione basata sulla massa
     const colors = generateColors(n);
-    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-    
     for (let i = 0; i < n; i++) {
+	const mass = state[i].m;
+
+        const radius = getBodyRadius(mass);
+        const geometry = new THREE.SphereGeometry(radius, 16, 16);
         const material = new THREE.MeshPhongMaterial({ color: colors[i] });
         const mesh = new THREE.Mesh(geometry, material);
         scene.add(mesh);
         bodies.push(mesh);
         trailMaterials.push(new THREE.LineBasicMaterial({ color: colors[i] }));
     }
+
+    // Aggiorna menu corpo
+    if (bodySelect) {
+        bodySelect.innerHTML = '';
+        for (let i = 0; i < n; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = `Body ${i + 1}`;
+            bodySelect.appendChild(option);
+        }
+        selectedBodyIndex = 0;
+        if (n > 0) loadBodyParameters(0);
+    }
 }
 
-// Crea stato casuale stabile per N corpi
+// Stato casuale stabile per N corpi
 function createRandomStableState(N) {
     const bodies = [];
     for (let i = 0; i < N; i++) {
@@ -134,7 +172,7 @@ function createRandomStableState(N) {
     return bodies;
 }
 
-// Campo gravitazionale (disattivato per N > 5)
+// Campo gravitazionale (solo per N ≤ 5)
 function createGravitationalField() {
     fieldLines.forEach(line => scene.remove(line));
     fieldLines = [];
@@ -197,8 +235,6 @@ function initSimulation(configKey = currentConfig, N = currentN) {
     currentConfig = configKey;
     currentN = N;
 
-    setupSceneForN(N);
-
     if (N === 3 && configKey === 'lagrange') {
         state = window.InitialConfigurations.lagrange.fn();
     } else if (N === 3 && configKey === 'figure8') {
@@ -207,6 +243,7 @@ function initSimulation(configKey = currentConfig, N = currentN) {
         state = createRandomStableState(N);
     }
 
+    setupSceneForN(N);
     E0 = window.totalEnergy(state);
     simulatedTime = 0;
     trajectories.forEach(t => t.length = 0);
@@ -243,7 +280,7 @@ function updateVisualization() {
     }
 }
 
-// Passo di simulazione
+// Passo simulazione
 function step() {
     if (!isRunning) return;
     state = window.leapfrogStep(state, dt);
@@ -252,22 +289,18 @@ function step() {
     updateEnergyUI();
 }
 
-// Aggiorna energia
+// Energia
 function updateEnergyUI() {
     const E1 = window.totalEnergy(state);
     const relError = Math.abs(E1 - E0) / (Math.abs(E0) + 1e-15);
-    
     E1Value.textContent = E1.toFixed(6);
     relErrorValue.textContent = relError.toExponential(2);
-    
     if (relError < 1e-4) relErrorValue.className = 'energy-good';
     else if (relError < 1e-2) relErrorValue.className = 'energy-warning';
     else relErrorValue.className = 'energy-bad';
-    
     timeValue.textContent = simulatedTime.toFixed(3);
 }
 
-// Aggiorna UI
 function updateUI() {
     E0Value.textContent = E0.toFixed(6);
     timeValue.textContent = "0.000";
@@ -276,20 +309,15 @@ function updateUI() {
     relErrorValue.className = 'energy-good';
 }
 
-// Registrazione video
+// Video
 function startRecording() {
     if (isRecording) return;
     recordedChunks = [];
-    
     const stream = renderer.domElement.captureStream(30);
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-    
     mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-        }
+        if (event.data.size > 0) recordedChunks.push(event.data);
     };
-    
     mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
@@ -306,16 +334,93 @@ function startRecording() {
         isRecording = false;
         recordBtn.textContent = '⏺️ Record Video';
     };
-    
     mediaRecorder.start();
     isRecording = true;
     recordBtn.textContent = '⏹️ Stop Recording';
 }
 
 function stopRecording() {
-    if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
+    if (mediaRecorder && isRecording) mediaRecorder.stop();
+}
+
+// Editor: carica parametri corpo
+function loadBodyParameters(index) {
+    if (!state || index >= state.length) return;
+    const body = state[index];
+    massSlider.value = body.m;
+    massValue.textContent = body.m.toFixed(1);
+    posX.value = body.r[0].toFixed(2);
+    posY.value = body.r[1].toFixed(2);
+    posZ.value = body.r[2].toFixed(2);
+    velX.value = body.v[0].toFixed(2);
+    velY.value = body.v[1].toFixed(2);
+    velZ.value = body.v[2].toFixed(2);
+    selectedBodyIndex = index;
+}
+
+// Editor: applica modifiche
+function applyBodyParameters() {
+    if (!state || selectedBodyIndex >= state.length) return;
+    
+    const m = parseFloat(massSlider.value);
+    const r = [
+        parseFloat(posX.value || 0),
+        parseFloat(posY.value || 0),
+        parseFloat(posZ.value || 0)
+    ];
+    const v = [
+        parseFloat(velX.value || 0),
+        parseFloat(velY.value || 0),
+        parseFloat(velZ.value || 0)
+    ];
+    
+    // Aggiorna lo stato
+    const newState = [...state];
+    newState[selectedBodyIndex] = new Body(m, r, v);
+    state = newState;
+    
+    // ✅ Aggiorna la mesh 3D: crea NUOVA geometria con nuovo raggio
+    const newRadius = getBodyRadius(m);
+    
+    // Rimuovi la vecchia geometria
+    bodies[selectedBodyIndex].geometry.dispose();
+    
+    // Crea nuova geometria
+    const newGeometry = new THREE.SphereGeometry(newRadius, 16, 16);
+    bodies[selectedBodyIndex].geometry = newGeometry;
+    
+    // ✅ Forza l'aggiornamento (opzionale ma sicuro)
+    bodies[selectedBodyIndex].scale.set(1, 1, 1);
+    
+    // Aggiorna energia se in pausa
+    if (!isRunning) {
+        E0 = window.totalEnergy(state);
+        updateUI();
     }
+    
+    createGravitationalField();
+}
+
+// Editor: randomizza
+function randomizeBodyParameters() {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.5 + Math.random() * 3.0;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    const z = (Math.random() - 0.5) * 0.5;
+    const speed = (0.5 + Math.random()) / Math.sqrt(radius);
+    const vx = -Math.sin(angle) * speed;
+    const vy = Math.cos(angle) * speed;
+    const vz = (Math.random() - 0.5) * 0.2;
+    
+    massSlider.value = 0.5 + Math.random() * 2.0;
+    posX.value = x.toFixed(2);
+    posY.value = y.toFixed(2);
+    posZ.value = z.toFixed(2);
+    velX.value = vx.toFixed(2);
+    velY.value = vy.toFixed(2);
+    velZ.value = vz.toFixed(2);
+    massValue.textContent = massSlider.value;
 }
 
 // Event listeners
@@ -364,7 +469,6 @@ configSelect.addEventListener('change', (e) => {
         alert("Pause the simulation before changing configuration.");
         return;
     }
-    // Per N ≠ 3, usa sempre caotico
     const newConfig = (currentN === 3) ? e.target.value : 'chaotic';
     initSimulation(newConfig, currentN);
     updateVisualization();
@@ -381,21 +485,43 @@ dtSlider.addEventListener('input', () => {
     dtValue.textContent = dt.toFixed(4);
 });
 
-// Nuovo: gestione slider N
+// Slider N corpi
 if (nBodiesSlider) {
     nBodiesSlider.addEventListener('input', () => {
         const N = parseInt(nBodiesSlider.value);
         nBodiesValue.textContent = N;
         if (!isRunning) {
-            // Per N ≠ 3, passa automaticamente a "chaotic"
             const newConfig = (N === 3) ? currentConfig : 'chaotic';
             initSimulation(newConfig, N);
             updateVisualization();
-            // Disabilita opzioni configurazione se N ≠ 3
-            if (configSelect) {
-                configSelect.disabled = (N !== 3);
-            }
+            if (configSelect) configSelect.disabled = (N !== 3);
         }
+    });
+}
+
+// Editor eventi
+if (bodySelect) {
+    bodySelect.addEventListener('change', (e) => {
+        loadBodyParameters(parseInt(e.target.value));
+    });
+}
+
+if (massSlider) {
+    massSlider.addEventListener('input', () => {
+        massValue.textContent = massSlider.value;
+    });
+}
+
+if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+        applyBodyParameters();
+        updateVisualization();
+    });
+}
+
+if (randomizeBtn) {
+    randomizeBtn.addEventListener('click', () => {
+        randomizeBodyParameters();
     });
 }
 
@@ -407,7 +533,7 @@ dtValue.textContent = dt.toFixed(4);
 if (nBodiesValue) nBodiesValue.textContent = currentN.toString();
 statusText.textContent = 'Paused';
 
-// Loop animazione
+// Loop
 function animate() {
     step();
     controls.update();
