@@ -101,20 +101,51 @@ const leapfrogStep = compose(
     halfStepVelocityRelation
 );
 
-// Initial Lagrangian state
-function createLagrangianState() {
-    const a = 1.0;
-    const r1 = vec3( a,  0.0, 0.0);
-    const r2 = vec3(-a/2,  Math.sqrt(3)*a/2, 0.0);
-    const r3 = vec3(-a/2, -Math.sqrt(3)*a/2, 0.0);
-    const v1 = vec3( 0.0,  1.0, 0.0);
-    const v2 = vec3(-Math.sqrt(3)/2, -0.5, 0.0);
-    const v3 = vec3( Math.sqrt(3)/2, -0.5, 0.0);
+// Aggiungi queste nuove funzioni in physics.js, alla fine
+
+function createFigure8State() {
+    // Chenciner & Montgomery's figure-8 (m=1, G=1)
+    const r1 = [0.97000436, -0.24308753, 0];
+    const r2 = [-0.97000436, 0.24308753, 0];
+    const r3 = [0, 0, 0];
+    const v1 = [0.4662036850, 0.4323657300, 0];
+    const v2 = [0.4662036850, 0.4323657300, 0];
+    const v3 = [-0.93240737, -0.86473146, 0];
     return [
         new Body(1.0, r1, v1),
         new Body(1.0, r2, v2),
         new Body(1.0, r3, v3)
     ];
+}
+
+function createRandomChaoticState() {
+    const bodies = [];
+    for (let i = 0; i < 3; i++) {
+        const r = [
+            (Math.random() - 0.5) * 4,
+            (Math.random() - 0.5) * 4,
+            (Math.random() - 0.5) * 0.1
+        ];
+        const v = [
+            (Math.random() - 0.5) * 1.5,
+            (Math.random() - 0.5) * 1.5,
+            (Math.random() - 0.5) * 0.1
+        ];
+        bodies.push(new Body(1.0, r, v));
+    }
+    return bodies;
+}
+
+const InitialConfigurations = {
+    lagrange: { name: "Lagrangian Equilateral", fn: createLagrangianState },
+    figure8: { name: "Figure-8 Orbit", fn: createFigure8State },
+    chaotic: { name: "Random Chaotic", fn: createRandomChaoticState }
+};
+
+// Esporta
+if (typeof window !== 'undefined') {
+    // ... esportazioni precedenti ...
+    window.InitialConfigurations = InitialConfigurations;
 }
 
 // Export for modules (or window in browser)
