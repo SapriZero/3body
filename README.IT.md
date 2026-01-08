@@ -1,4 +1,3 @@
-
 # Simulazione del problema dei tre corpi mediante composizione di relazioni dinamiche pure
 
 > **Un approccio dichiarativo, modulare e performante alla dinamica gravitazionale**
@@ -160,8 +159,7 @@ Il codice è **open, riproducibile e pronto per l’estensione**.
 ---
 
 ## ▶️ Demo live
-https://vitejsvite4msn1xzn-vs4j--5173--365214aa.local-corp.webcontainer.io/
-
+https://saprizero.github.io/cosmo/js/
 ---
 
 **Grazie per l’attenzione**  
